@@ -1,0 +1,110 @@
+{
+  "packageFormat": "xpert-prompt-full-backup",
+  "packageSchemaVersion": 4,
+  "exportedAt": 1789250981217,
+  "activeProjectId": "ko3xarfpmtmyf7hd",
+  "projects": [
+    {
+      "id": "ko3xarfpmtmyf7hd",
+      "schemaVersion": 4,
+      "name": "Zeke Zoom 2076",
+      "createdAt": 1788526370209,
+      "bible": {
+        "visualStyle": "Premium stylized theatrical 3D animation. Clearly animated faces and environments. No photorealistic CGI, no realistic digital humans, no live-action skin texture.",
+        "world": "South Bronx, 2076.",
+        "permanentRules": ""
+      },
+      "storyBible": {
+        "corePhilosophy": "",
+        "premise": "",
+        "themes": ""
+      },
+      "characters": [],
+      "sets": [],
+      "props": [],
+      "chapters": [],
+      "shots": [],
+      "shot": {
+        "style": {
+          "visualMedium": "",
+          "styleDescription": "",
+          "realismLevel": "",
+          "renderFeel": "",
+          "colorLanguage": "",
+          "textureLevel": "",
+          "styleReferences": "",
+          "mustInclude": "",
+          "mustNotInclude": ""
+        },
+        "characterRefs": [],
+        "set": {
+          "setName": "",
+          "location": "",
+          "timeOfDay": "",
+          "weather": "",
+          "interiorExterior": "",
+          "architecturalStyle": "",
+          "backgroundDensity": "",
+          "environmentalWear": "",
+          "setContinuity": ""
+        },
+        "wardrobeRefs": [],
+        "props": [],
+        "camera": {
+          "shotType": "",
+          "cameraDistance": "",
+          "lensLength": "",
+          "depthOfField": "",
+          "composition": "",
+          "cameraMovementDuringAction": ""
+        },
+        "lighting": {
+          "keyLight": "",
+          "lightDirection": "",
+          "lightTemperature": "",
+          "atmosphere": "",
+          "mood": "",
+          "forbiddenLightingChanges": ""
+        },
+        "action": {
+          "primaryAction": "=== MASTER PROMPT ===\n\nPROJECT VISUAL STYLE — HARD LOCK:\nPremium stylized theatrical 3D animation. Clearly animated characters and environments. No photorealistic CGI, realistic digital humans, or live-action skin texture. South Bronx, 2076. Maintain the exact established Zeke Zoom visual universe.\n\nXPERT — ZEKE ZOOM 2076\nBOOK IMAGE 4 — “FAMILY CHILD LABOR”\n\nTASK:\nCreate ONE optimized Runway IMAGE-generation prompt for Book Image 4.\n\nHARD OUTPUT RULE:\nFinal Xpert output MUST be under 3,500 characters.\nOutput ONLY the final Runway prompt.\nDo NOT append compressed versions, asset lists, continuity notes, duplicate negatives, summaries, explanations, or repeated canon.\n\nSTORY PURPOSE:\nIntroduce Zeke’s best friends Gary and Emory while showing the ordinary, humorous side of Zeke’s extraordinary life.\n\nThe visual beat comes from Gary teasing Zeke because a 12-year-old with three college degrees is still sweeping the floor at his family’s automotive shop.\n\nTHIS IS A FRIENDSHIP/HUMOR SCENE — NOT AN ACTION OR SUPERHERO SCENE.\n\nREFERENCE PRIORITY — ABSOLUTE:\nUse the supplied reference images as identity authority.\n\nREFERENCE 1 — CIVILIAN ZEKE:\nPreserve Zeke’s exact approved face, tightly curled hair, medium-brown skin, younger/shorter 12-year-old proportions, relatively larger child head and slim preteen body.\n\nPreserve exact civilian wardrobe:\nolive-green hooded jacket,\nplain dark T-shirt,\ndark blue jeans,\nblack-and-white sneakers.\n\nNO Z emblem.\nNO AEGIS.\nNO superhero clothing.\n\nREFERENCE 2 — EMORY:\nEmory is the TALL, VERY SLIM boy with the high-top haircut.\nPreserve his exact face, elongated youthful proportions, hairstyle, skin tone and established clothing:\norange/brown plaid overshirt,\nlight neutral T-shirt,\nloose dark pants,\ngreen/cream sneakers.\n\nDo NOT shorten Emory or give him an Afro.\n\nREFERENCE 3 — GARY:\nGary is the SHORTER boy with the LARGE ROUNDED AFRO.\nPreserve his exact face, Afro shape, skin tone and established clothing:\nred-and-black plaid overshirt,\ngray T-shirt,\ntan pants,\ndark sneakers.\n\nDo NOT make Gary tall.\nDo NOT give Gary Emory’s high-top haircut.\n\nTHE THREE BOYS MUST REMAIN VISUALLY DISTINCT.\n\nSET — ABSOLUTE CONTINUITY:\nUse the supplied approved LAMB’S AUTOMOTIVE MASTER SET.\n\nPreserve the established garage architecture, open bay, South Bronx exterior, Lamborghini lift, workbenches, tool cabinets, diagnostic equipment, floor layout, warm afternoon lighting and overall geography.\n\nDo NOT redesign the garage.\n\nSCENE:\nZeke, Gary and Emory are together inside Lamb’s Automotive during the same Saturday sequence.\n\nZeke has paused while sweeping and still has the broom with him.\n\nGary is playfully teasing Zeke about having three college degrees while still sweeping floors. His body language should be animated, amused and friendly — perhaps gesturing toward Zeke or the broom while grinning.\n\nZeke reacts with an amused, mildly annoyed “really?” expression. He is comfortable with his friends, not angry or embarrassed.\n\nEmory stands nearby with his characteristic dry, matter-of-fact demeanor, naturally participating in the conversation without exaggerated comedy.\n\nTheir friendship should be instantly readable.\n\nDo NOT put dialogue or speech bubbles in the image.\n\nCOMPOSITION:\nPremium animated-feature medium-wide three-character shot.\n\nZeke is the visual anchor.\nGary and Emory form a natural conversational triangle around him.\n\nThe broom must remain clearly visible and understandable as the subject of the joke.\n\nShow the boys at sufficiently full scale to emphasize the height contrast:\nZeke = short/young,\nGary = shorter boy with Afro,\nEmory = clearly tallest and very slim.\n\nKeep enough of Lamb’s Automotive visible to maintain location continuity without allowing the environment to overpower the characters.\n\nNatural child-scale camera height.\nStrong foreground/midground/background separation.\nFeature-film composition and dimensional depth.\n\nLIGHTING:\nMatch established warm late-afternoon sunlight through the garage bay mixed with practical shop lighting. Preserve the visual continuity of previous Lamb’s Automotive illustrations.\n\nMOOD:\nWarm, funny, affectionate, intelligent and grounded.\nThree real best friends joking around on a normal Saturday.\n\nSTYLE:\nPremium theatrical stylized 3D animated feature-film frame matching the approved Zeke canon.\n\nNOT photorealistic.\nNOT live action.\nNOT 2D.\nNOT concept art.\nNOT game/Unreal CGI.\nNOT cyberpunk.\n\nFORBIDDEN:\nCharacter redesigns, swapped identities, altered hairstyles, wrong heights, wardrobe changes, older-looking boys, adult proportions, muscular children, Z emblem, AEGIS, superhero imagery, dialogue text, speech bubbles, extra characters, duplicate boys, garage redesign, different Lamborghini, excessive futuristic technology or random generated text.\n\nCONTINUITY IS MORE IMPORTANT THAN NOVELTY.\n\nFINAL GOAL:\nA warm cinematic friendship moment introducing Gary and Emory: brilliant 12-year-old Zeke stands with his broom inside his family’s automotive shop while Gary jokingly teases him and tall, dry-humored Emory joins the exchange.",
+          "secondaryAction": "",
+          "timing": "",
+          "cameraMovementDuringAction2": "",
+          "noWarp": true,
+          "noExtraFingers": true
+        },
+        "continuity": {
+          "priorShotContinuity": "",
+          "wardrobeState": "",
+          "propState2": "",
+          "screenDirection": "",
+          "eyelineContinuity": "",
+          "timeElapsed": ""
+        },
+        "forbidden": {
+          "checks": {},
+          "customForbidden": ""
+        },
+        "platform": "Generic Image Model",
+        "mode": "Image Prompt",
+        "contentType": "character_environment",
+        "strictResolutions": {},
+        "chapterId": null,
+        "sceneId": null,
+        "shotNumber": null,
+        "supportingReference": null
+      },
+      "versions": [],
+      "strictMode": false,
+      "sources": [],
+      "facts": [],
+      "referencePriority": [
+        "character",
+        "set",
+        "prop",
+        "style"
+      ]
+    }
+  ]
+}
