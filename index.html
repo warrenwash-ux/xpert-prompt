@@ -497,6 +497,136 @@ function saveAIConfig(apiKey){
 }
 function hasAIKey(){ return !!(getAIConfig().apiKey || '').trim(); }
 
+/* ---------------- GitHub Auto-Backup — an external, versioned copy that survives a single browser's storage failing entirely ----------------
+   Every save also (debounced, best-effort) commits a full-backup JSON to a GitHub repo via the
+   Contents API. Because each commit is a real git commit, the repo's own history becomes a rotating,
+   effectively unlimited set of recovery points — independent of this browser, this profile, or this
+   origin's storage ever failing. A misconfigured or failing GitHub backup NEVER blocks or affects the
+   real local save — it is entirely decoupled from persist()/save()'s own success or failure. Your token
+   is stored only in this browser's localStorage and sent only to api.github.com, exactly like the
+   Anthropic API key above. */
+const GH_BACKUP_CONFIG_KEY = 'xp_github_backup_config';
+function getGithubBackupConfig(){
+  const defaults = { enabled:false, token:'', owner:'', repo:'', path:'xpert-backups/latest.json', lastBackupAt:null, lastBackupStatus:'' };
+  try{
+    const raw = localStorage.getItem(GH_BACKUP_CONFIG_KEY);
+    return raw ? Object.assign({}, defaults, JSON.parse(raw)) : defaults;
+  }catch(e){ return defaults; }
+}
+function saveGithubBackupConfig(cfg){
+  try{ localStorage.setItem(GH_BACKUP_CONFIG_KEY, JSON.stringify(cfg)); }catch(e){ console.error('Could not save GitHub backup config', e); }
+}
+
+let _githubBackupTimer = null;
+let _githubBackupDirty = false;
+function scheduleGithubBackup(){
+  const cfg = getGithubBackupConfig();
+  if(!cfg.enabled || !cfg.token || !cfg.owner || !cfg.repo) return;
+  _githubBackupDirty = true;
+  if(_githubBackupTimer) return; // a backup is already queued for the next tick — this save just piggybacks on it
+  _githubBackupTimer = setTimeout(()=>{
+    _githubBackupTimer = null;
+    if(_githubBackupDirty){ _githubBackupDirty = false; runGithubBackup(false); }
+  }, 60000); // at most one GitHub write per minute, however often save() fires in between
+}
+
+async function runGithubBackup(showResult){
+  const cfg = getGithubBackupConfig();
+  if(!cfg.enabled || !cfg.token || !cfg.owner || !cfg.repo){
+    if(showResult) openMessageModal('GitHub backup is not fully configured yet — fill in the token, owner, and repo first.');
+    return { ok:false, error:'not configured' };
+  }
+  const path = (cfg.path || 'xpert-backups/latest.json').replace(/^\/+/, '');
+  const apiUrl = `https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+  const payload = {
+    packageFormat: 'xpert-prompt-full-backup',
+    packageSchemaVersion: CURRENT_SCHEMA_VERSION,
+    exportedAt: Date.now(),
+    activeProjectId: DB.activeProjectId,
+    projects: JSON.parse(JSON.stringify(DB.projects)),
+  };
+  const contentB64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload, null, 2))));
+  try{
+    let sha = null;
+    const getResp = await fetch(apiUrl, { headers: { Authorization: `Bearer ${cfg.token}`, Accept:'application/vnd.github+json' } });
+    if(getResp.status === 200){ const j = await getResp.json(); sha = j.sha; }
+    else if(getResp.status !== 404){ throw new Error(`GitHub read failed (${getResp.status})`); }
+    const putResp = await fetch(apiUrl, {
+      method:'PUT',
+      headers: { Authorization: `Bearer ${cfg.token}`, Accept:'application/vnd.github+json', 'Content-Type':'application/json' },
+      body: JSON.stringify({ message: `Xpert Prompt auto-backup ${new Date().toISOString()}`, content: contentB64, ...(sha?{sha}:{}) }),
+    });
+    if(!putResp.ok){ const errBody = await putResp.text().catch(()=>''); throw new Error(`GitHub write failed (${putResp.status}) ${errBody.slice(0,200)}`); }
+    const fresh = getGithubBackupConfig();
+    fresh.lastBackupAt = Date.now(); fresh.lastBackupStatus = 'OK';
+    saveGithubBackupConfig(fresh);
+    if(showResult) openMessageModal(`Backed up to GitHub: ${cfg.owner}/${cfg.repo}/${path}`);
+    return { ok:true };
+  }catch(e){
+    const fresh = getGithubBackupConfig();
+    fresh.lastBackupStatus = 'FAILED: ' + e.message;
+    saveGithubBackupConfig(fresh);
+    console.error('GitHub backup failed', e);
+    if(showResult) openMessageModal('GitHub backup failed: ' + e.message + '\n\nThis never affects your local save — it only means the external copy did not update this time. Check the token has "Contents: read and write" permission on this repo.');
+    return { ok:false, error: e.message };
+  }
+}
+
+function openGithubBackupSettingsModal(){
+  const existing = document.getElementById('githubBackupOverlay');
+  if(existing) existing.remove();
+  const cfg = getGithubBackupConfig();
+  const overlay = document.createElement('div');
+  overlay.id = 'githubBackupOverlay';
+  overlay.className = 'overlay show';
+  overlay.innerHTML = `<div class="modal" style="max-width:480px;">
+    <h4>GitHub Auto-Backup</h4>
+    <p>Every save also commits a full backup to a GitHub repo of your choice — a real git commit each time, so the repo's own history becomes permanent, external recovery points independent of this browser ever failing. Your token is stored only in this browser's local storage and sent only to api.github.com.</p>
+    <div class="field" style="margin-bottom:10px;">
+      <label>Personal access token (fine-grained, "Contents: read and write" on the target repo)</label>
+      <input type="password" id="ghTokenInput" placeholder="github_pat_..." value="${escapeHtml(cfg.token||'')}">
+    </div>
+    <div class="field-row" style="margin-bottom:10px;">
+      <div class="field"><label>Repo owner</label><input type="text" id="ghOwnerInput" placeholder="e.g. warrenwash-ux" value="${escapeHtml(cfg.owner||'')}"></div>
+      <div class="field"><label>Repo name</label><input type="text" id="ghRepoInput" placeholder="e.g. xpert-prompt" value="${escapeHtml(cfg.repo||'')}"></div>
+    </div>
+    <div class="field" style="margin-bottom:10px;">
+      <label>File path in the repo</label>
+      <input type="text" id="ghPathInput" placeholder="xpert-backups/latest.json" value="${escapeHtml(cfg.path||'xpert-backups/latest.json')}">
+    </div>
+    <div class="field" style="margin-bottom:14px;">
+      <label class="chk"><input type="checkbox" id="ghEnabledInput" ${cfg.enabled?'checked':''}> Enable automatic backup on save (at most once per minute)</label>
+    </div>
+    <div class="sub" style="margin-bottom:14px;">${cfg.lastBackupAt ? `Last backup: ${new Date(cfg.lastBackupAt).toLocaleString()} — ${escapeHtml(cfg.lastBackupStatus||'')}` : 'No backup has run yet.'}</div>
+    <div class="modal-actions">
+      <button class="btn btn-gold" id="saveGhBackupBtn">Save settings</button>
+      <button class="btn" id="testGhBackupBtn">Save &amp; back up now</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('githubBackupOverlay').remove()">Close</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const readForm = ()=>({
+    enabled: overlay.querySelector('#ghEnabledInput').checked,
+    token: overlay.querySelector('#ghTokenInput').value.trim(),
+    owner: overlay.querySelector('#ghOwnerInput').value.trim(),
+    repo: overlay.querySelector('#ghRepoInput').value.trim(),
+    path: overlay.querySelector('#ghPathInput').value.trim() || 'xpert-backups/latest.json',
+  });
+  overlay.querySelector('#saveGhBackupBtn').onclick = ()=>{
+    const prior = getGithubBackupConfig();
+    saveGithubBackupConfig(Object.assign({}, prior, readForm()));
+    overlay.remove();
+    renderAll();
+  };
+  overlay.querySelector('#testGhBackupBtn').onclick = async ()=>{
+    const prior = getGithubBackupConfig();
+    saveGithubBackupConfig(Object.assign({}, prior, readForm()));
+    await runGithubBackup(true);
+    overlay.remove();
+    renderAll();
+  };
+}
+
 async function renderIdbRecoverySection(){
   const el = document.getElementById('idbRecoverySection');
   if(!el) return;
@@ -522,7 +652,7 @@ async function renderIdbRecoverySection(){
           <div class="entity">
             <strong>${escapeHtml(s.key)}</strong> <span class="sub">${new Date(s.savedAt).toLocaleString()}</span>
             <div style="font-size:12px;color:var(--text-dim);margin-top:4px;">
-              Projects: <strong>${s.counts.projects}</strong> · Characters: <strong>${s.counts.characters}</strong> · Sets: <strong>${s.counts.sets}</strong> · Props: <strong>${s.counts.props}</strong> · Ref. images: <strong>${s.counts.referenceImages}</strong>
+              Projects: <strong>${s.counts.projects}</strong> · Characters: <strong>${s.counts.characters}</strong> · Sets: <strong>${s.counts.sets}</strong> · Props: <strong>${s.counts.props}</strong> · Ref. images: <strong>${s.counts.referenceImages}</strong> · Sources: <strong>${s.counts.sources}</strong> · Facts: <strong>${s.counts.facts}</strong> · Shots: <strong>${s.counts.shots}</strong> · Versions: <strong>${s.counts.versions}</strong>
             </div>
             <div style="margin-top:6px;"><button class="btn btn-sm" onclick="restoreFromIdbSnapshot('${s.key}')">Restore this snapshot</button></div>
           </div>
@@ -773,6 +903,10 @@ function openAISettingsModal(message){
 }
 const PLATFORMS = ['Generic Image Model','Generic Video Model','ChatGPT Image Generation','Runway','Veo','Kling','Hailuo','Midjourney','Sora','Leonardo','Stable Diffusion'];
 const MODES = ['Image Prompt','Video / Animation Prompt','Image Edit Prompt','Character Reference Prompt','Environment / Set Design Prompt','Product / Object Design Prompt','Storyboard Shot Prompt'];
+// Video prompts read best motion-first and tend to want a tighter default length than image prompts —
+// used by assembleMaster/assembleCompressed to differentiate structure and default length by mode, not platform.
+function isVideoMode(shot){ return !!(shot && shot.mode && shot.mode.includes('Video')); }
+function defaultCompactLimit(shot){ return isVideoMode(shot) ? 400 : 600; }
 
 const LOCK_DEFS = [
   {key:'style', label:'Style Lock', critical:['visualMedium','styleDescription'], important:['realismLevel','renderFeel'], optional:['colorLanguage','textureLevel','styleReferences']},
@@ -839,7 +973,7 @@ function blankShot(){
     set:{ setName:'', location:'', timeOfDay:'', weather:'', interiorExterior:'', architecturalStyle:'', backgroundDensity:'', environmentalWear:'', setContinuity:'' },
     wardrobeRefs:[], // {charId, top, bottom, outerwear, shoes, condition, fabric, jewelry, continuityNote}
     props:[], // {propName, propType, location, state, whoIsHolding, forbiddenChanges}
-    camera:{ shotType:'', cameraDistance:'', lensLength:'', depthOfField:'', composition:'', cameraMovementDuringAction:'' },
+    camera:{ shotType:'', cameraDistance:'', lensLength:'', depthOfField:'', composition:'', cameraMovementDuringAction:'', movementBuilder:{ start:'', movement:'', end:'' } }, // movementBuilder is an optional Start→Movement→End composer that feeds an additional prompt line — does not replace or overwrite cameraMovementDuringAction
     lighting:{ keyLight:'', lightDirection:'', lightTemperature:'', atmosphere:'', mood:'', forbiddenLightingChanges:'' },
     action:{ primaryAction:'', secondaryAction:'', timing:'', cameraMovementDuringAction2:'', noWarp:true, noExtraFingers:true },
     continuity:{ priorShotContinuity:'', wardrobeState:'', propState2:'', screenDirection:'', eyelineContinuity:'', timeElapsed:'' },
@@ -849,7 +983,30 @@ function blankShot(){
     contentType: 'character_environment', // what the shot actually contains — drives which lock requirements are applicable
     strictResolutions: {}, // gapId -> 'allow' | 'skip', remembered so Strict Mode doesn't re-ask
     chapterId: null, sceneId: null, shotNumber: null, // story position — used by resolveStoryContext, not required for standalone shots
+    productionType: 'image', // drives which ADDITIONAL lock sets appear beyond the core 10 — does not remove or restructure the core locks
+    musicVideo: { artist:'', songTitle:'', audioMasterLockNote:'', tempoBpm:'', vocalTimingNote:'', lipSyncMode:'off', performanceStyle:'' }, // only rendered/compiled when productionType === 'music_video'
   };
+}
+
+const PRODUCTION_TYPES = [
+  {key:'image', label:'Image'},
+  {key:'image_to_video', label:'Image-to-Video'},
+  {key:'music_video', label:'Music Video'},
+  {key:'lip_sync_performance', label:'Lip-Sync Performance'},
+  {key:'cinematic_scene', label:'Cinematic Scene'},
+  {key:'dialogue_scene', label:'Dialogue Scene'},
+  {key:'animation', label:'Animation'},
+  {key:'commercial', label:'Commercial'},
+  {key:'character_reference', label:'Character Reference'},
+  {key:'establishing_shot', label:'Environment / Establishing Shot'},
+  {key:'custom', label:'Custom'},
+];
+function productionTypeLabel(key){
+  const t = PRODUCTION_TYPES.find(t=>t.key===key);
+  return t ? t.label : 'Image';
+}
+function isMusicVideoType(shot){
+  return shot && (shot.productionType === 'music_video' || shot.productionType === 'lip_sync_performance');
 }
 
 /* ---------------- Shot Content Type — context-aware applicability ----------------
@@ -897,6 +1054,43 @@ const DEFAULT_FORBIDDEN = ['character face drift','age changes','hair changes','
 
 const CURRENT_SCHEMA_VERSION = 4;
 
+/* ---------------- Reference Priority Hierarchy — reorderable, project-level ----------------
+   Controls the order reference-asset categories appear in the Reference Asset List and Visual
+   Reference Instructions tabs, and states that order explicitly so the model knows which wins
+   if two attached references visually disagree. Purely a display/instruction ordering layer —
+   never touches the per-image authorityLevel system (MASTER CANON / APPROVED REFERENCE / etc.),
+   which still governs a single asset's own reference images. */
+const REFERENCE_PRIORITY_CATEGORIES = [
+  {key:'character', label:'Character references'},
+  {key:'set', label:'Set / environment references'},
+  {key:'prop', label:'Prop / technology / vehicle references'},
+  {key:'style', label:'Style references'},
+];
+function referencePriorityLabel(key){
+  const c = REFERENCE_PRIORITY_CATEGORIES.find(c=>c.key===key);
+  return c ? c.label : key;
+}
+function ensureReferencePriority(proj){
+  if(!Array.isArray(proj.referencePriority) || proj.referencePriority.length !== REFERENCE_PRIORITY_CATEGORIES.length || REFERENCE_PRIORITY_CATEGORIES.some(c=>!proj.referencePriority.includes(c.key))){
+    proj.referencePriority = REFERENCE_PRIORITY_CATEGORIES.map(c=>c.key);
+  }
+}
+function moveReferencePriority(key, dir){
+  const proj = activeProject();
+  ensureReferencePriority(proj);
+  const arr = proj.referencePriority;
+  const i = arr.indexOf(key);
+  const j = i + dir;
+  if(i<0 || j<0 || j>=arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  save();
+  renderAll();
+}
+function buildReferencePriorityLine(proj){
+  ensureReferencePriority(proj);
+  return `REFERENCE PRIORITY (highest to lowest authority if attached references visually disagree): ${proj.referencePriority.map((k,i)=>`${i+1}. ${referencePriorityLabel(k)}`).join(' ')}`;
+}
+
 function blankProject(name){
   return {
     id: uid(),
@@ -915,6 +1109,7 @@ function blankProject(name){
     strictMode: false,
     sources: [], // {id, name, kind:'text'|'file'|'image', content, imageData, mediaType, addedAt, status:'pending'|'analyzed'|'error'}
     facts: [], // {id, sourceId, sourceName, category, subject, factText, status:'proposed'|'approved'|'edited'|'rejected'|'locked', createdAt}
+    referencePriority: REFERENCE_PRIORITY_CATEGORIES.map(c=>c.key), // reorderable — order asset reference categories are listed/instructed in when a shot has more than one
   };
 }
 
@@ -1310,6 +1505,11 @@ function save(){
     console.error('Save failed', e);
     updateDataSafetyStatus('SAVE FAILED', 'Saving failed — your browser storage may be full, or IndexedDB is unavailable. Recent changes may not be safely stored. Back up now via Storage Diagnostics.');
     showOnScreenError('Saving failed — your browser storage may be full. Recent changes may not have been saved. Try removing some large reference images or freeing up space.');
+  }).finally(()=>{
+    // Runs after every save attempt, success OR failure — this is the one case GitHub Auto-Backup
+    // exists for: local storage failing is exactly when the live in-memory data most needs an
+    // external copy. scheduleGithubBackup() itself is a no-op unless the feature is configured/enabled.
+    scheduleGithubBackup();
   });
   return _saveQueue;
 }
@@ -1832,6 +2032,18 @@ function viewBible(){
       <label>Free-form canon rules (one per line)</label>
       <textarea rows="5" oninput="updateBible('permanentRules', this.value)" placeholder="e.g. AetherMesh is a flexible smart textile, never rigid armor plating.">${escapeHtml(proj.bible.permanentRules)}</textarea>
     </div>
+  </div>
+
+  <div class="section-block">
+    <h3>Reference Priority</h3>
+    <div class="sub" style="margin-bottom:10px;">If two attached references visually disagree, this order decides which wins. Stated explicitly in the Reference Asset List and Visual Reference Instructions output.</div>
+    ${(()=>{ ensureReferencePriority(proj); return proj.referencePriority.map((key,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;background:var(--bg-raised);border-radius:8px;padding:8px 12px;margin-bottom:6px;">
+      <span class="mono" style="width:20px;color:var(--text-dim);">${i+1}</span>
+      <span style="flex:1;font-size:13px;">${escapeHtml(referencePriorityLabel(key))}</span>
+      <button class="btn btn-sm" ${i===0?'disabled':''} onclick="moveReferencePriority('${key}',-1)" title="Move up">↑</button>
+      <button class="btn btn-sm" ${i===proj.referencePriority.length-1?'disabled':''} onclick="moveReferencePriority('${key}',1)" title="Move down">↓</button>
+    </div>`).join(''); })()}
   </div>
 
   <div class="section-block">
@@ -4280,6 +4492,9 @@ function knowledgeAskTab(proj){
 function viewBuilder(){
   const proj = activeProject();
   const shot = proj.shot;
+  if(!shot.productionType) shot.productionType = 'image';
+  if(!shot.musicVideo) shot.musicVideo = { artist:'', songTitle:'', audioMasterLockNote:'', tempoBpm:'', vocalTimingNote:'', lipSyncMode:'off', performanceStyle:'' };
+  if(!shot.camera.movementBuilder) shot.camera.movementBuilder = { start:'', movement:'', end:'' };
   const { perLock } = computeCompleteness(proj);
   const currentChapter = (proj.chapters||[]).find(c=>c.id===shot.chapterId);
   const currentScene = currentChapter ? (currentChapter.scenes||[]).find(s=>s.id===shot.sceneId) : null;
@@ -4306,6 +4521,9 @@ function viewBuilder(){
         ${(currentChapter.scenes||[]).map(s=>`<option value="${s.id}" ${shot.sceneId===s.id?'selected':''}>Sc ${s.number}: ${escapeHtml(s.title)}</option>`).join('')}
       </select>
       <input type="number" class="btn" style="padding:8px 10px;width:80px;" placeholder="Shot #" value="${shot.shotNumber||''}" onchange="updateShotField('shotNumber', this.value?parseInt(this.value,10):null)">` : ''}
+      <select class="btn" style="padding:8px 10px;" onchange="updateShotProductionType(this.value)" title="What kind of production is this shot for? Reveals additional locks specific to that type.">
+        ${PRODUCTION_TYPES.map(t=>`<option value="${t.key}" ${(shot.productionType||'image')===t.key?'selected':''}>${t.label}</option>`).join('')}
+      </select>
       <select class="btn" style="padding:8px 10px;" onchange="updateShotContentType(this.value)" title="What does this shot actually contain? Determines which lock requirements apply.">
         ${SHOT_CONTENT_TYPES.map(t=>`<option value="${t.key}" ${shot.contentType===t.key?'selected':''}>${t.label}</option>`).join('')}
       </select>
@@ -4332,6 +4550,7 @@ function viewBuilder(){
     ${lockCardAction(proj, perLock.action)}
     ${lockCardContinuity(proj, perLock.continuity)}
     ${lockCardForbidden(proj, perLock.forbidden)}
+    ${isMusicVideoType(shot) ? lockCardMusicVideo(proj) : ''}
   </div>
   `;
 }
@@ -4671,10 +4890,42 @@ function updatePropRef(i, field, val){
   proj.shot.props[i][field]=val; save(); refreshLockCardInPlace('prop');
 }
 
+/* ---------------- Camera Shot Builder — optional Start → Movement → End composer ----------------
+   Purely additive: composes into its own prompt line (buildCameraMovementLine) alongside the
+   existing free-text cameraMovementDuringAction field, never overwrites it. Reuses the same
+   framing vocabulary as Shot Type for Start/End so the two stay consistent. */
+const CAMERA_FRAME_POSITIONS = ['extreme wide','wide','medium wide','medium','medium close-up','close-up','extreme close-up','over-the-shoulder','POV','aerial','low angle','high angle'];
+const CAMERA_MOVEMENTS = ['static / locked-off','handheld','Steadicam follow','pan left','pan right','whip pan','tilt up','tilt down','dolly in','dolly out','push in','pull out','truck left','truck right','pedestal up','pedestal down','crane up','crane down','arc left','arc right','zoom in','zoom out','rack focus'];
+
+function buildCameraMovementLine(mb){
+  if(!mb || (!mb.start && !mb.movement && !mb.end)) return '';
+  if(mb.start && mb.movement && mb.end) return `Camera movement: starts on a ${mb.start} framing, performs a ${mb.movement}, ends on a ${mb.end} framing.`;
+  if(mb.movement && (mb.start || mb.end)){
+    const from = mb.start ? ` from a ${mb.start} framing` : '';
+    const to = mb.end ? ` to a ${mb.end} framing` : '';
+    return `Camera movement: ${mb.movement}${from}${to}.`;
+  }
+  if(mb.movement) return `Camera movement: ${mb.movement}.`;
+  const from = mb.start ? `starts on a ${mb.start} framing` : '';
+  const to = mb.end ? `ends on a ${mb.end} framing` : '';
+  return `Camera movement: ${[from,to].filter(Boolean).join(', ')}.`;
+}
+
+function updateCameraMovementBuilder(field, val){
+  const proj = activeProject();
+  const cam = proj.shot.camera;
+  if(!cam.movementBuilder) cam.movementBuilder = { start:'', movement:'', end:'' };
+  cam.movementBuilder[field] = val;
+  save();
+  const preview = document.getElementById('camera-movement-preview');
+  if(preview) preview.textContent = buildCameraMovementLine(cam.movementBuilder) || 'Fill in any field below to compose a camera movement line.';
+  refreshLockCardInPlace('camera');
+}
+
 function lockCardCamera(proj, ev){
   const c = proj.shot.camera;
   const open = !!openLocks['camera'];
-  const shotTypes = ['extreme wide','wide','medium wide','medium','medium close-up','close-up','extreme close-up','over-the-shoulder','POV','aerial','low angle','high angle'];
+  const shotTypes = CAMERA_FRAME_POSITIONS;
   return `<div class="lock-card" id="lock-camera" style="--lock-color:${LOCK_COLORS.camera};">
     ${lockHeader(6,'camera','Camera Lock', ev.status)}
     <div class="lock-body ${open?'open':''}">
@@ -4690,6 +4941,26 @@ function lockCardCamera(proj, ev){
         <div class="field"><label>Depth of field</label><input type="text" value="${escapeHtml(c.depthOfField)}" oninput="updateNested('camera','depthOfField',this.value)"></div>
         <div class="field"><label>Composition style</label><input type="text" value="${escapeHtml(c.composition)}" oninput="updateNested('camera','composition',this.value)"></div>
       </div>
+      ${(()=>{ const mb = c.movementBuilder||{start:'',movement:'',end:''}; return `
+      <div class="field" style="margin-top:4px;border-top:1px solid var(--border);padding-top:12px;">
+        <label>Camera Shot Builder (optional) — Start → Movement → End</label>
+        <div class="field-row">
+          <div class="field"><label>Start framing</label><select onchange="updateCameraMovementBuilder('start',this.value)">
+            <option value="">—</option>
+            ${CAMERA_FRAME_POSITIONS.map(o=>`<option ${mb.start===o?'selected':''}>${o}</option>`).join('')}
+          </select></div>
+          <div class="field"><label>Movement</label><select onchange="updateCameraMovementBuilder('movement',this.value)">
+            <option value="">—</option>
+            ${CAMERA_MOVEMENTS.map(o=>`<option ${mb.movement===o?'selected':''}>${o}</option>`).join('')}
+          </select></div>
+          <div class="field"><label>End framing</label><select onchange="updateCameraMovementBuilder('end',this.value)">
+            <option value="">—</option>
+            ${CAMERA_FRAME_POSITIONS.map(o=>`<option ${mb.end===o?'selected':''}>${o}</option>`).join('')}
+          </select></div>
+        </div>
+        <div class="sub" id="camera-movement-preview" style="margin-top:4px;">${escapeHtml(buildCameraMovementLine(mb)) || 'Fill in any field above to compose a camera movement line.'}</div>
+        <div class="sub" style="margin-top:2px;">Adds its own line to the compiled prompt alongside (not instead of) any free-text camera movement notes elsewhere.</div>
+      </div>`; })()}
       ${knowledgePanel(proj,'camera')}
       ${auditNote(ev)}
     </div>
@@ -4791,6 +5062,43 @@ function updateForbiddenCheck(item, val){
 }
 
 /* generic nested updaters */
+function updateMusicVideoField(field, val){
+  const proj = activeProject();
+  if(!proj.shot.musicVideo) proj.shot.musicVideo = { artist:'', songTitle:'', audioMasterLockNote:'', tempoBpm:'', vocalTimingNote:'', lipSyncMode:'off', performanceStyle:'' };
+  proj.shot.musicVideo[field] = val;
+  save();
+}
+
+function lockCardMusicVideo(proj){
+  const mv = proj.shot.musicVideo;
+  return `<div class="lock-card" id="lock-musicvideo" style="grid-column:1/-1;--lock-color:${LOCK_COLORS.action||'#8b5cf6'};">
+    <div class="lock-card-head" onclick="toggleLock('musicvideo')">
+      <div class="lock-title"><span class="lock-num">MV</span>Music Video / Performance Locks</div>
+      <div style="display:flex;align-items:center;gap:10px;"><span class="chev ${openLocks['musicvideo']?'open':''}">▶</span></div>
+    </div>
+    <div class="lock-body ${openLocks['musicvideo']?'open':''}">
+      <div class="field-row">
+        <div class="field"><label>Artist</label><input type="text" value="${escapeHtml(mv.artist)}" oninput="updateMusicVideoField('artist',this.value)"></div>
+        <div class="field"><label>Song title</label><input type="text" value="${escapeHtml(mv.songTitle)}" oninput="updateMusicVideoField('songTitle',this.value)"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Tempo (BPM, optional)</label><input type="text" value="${escapeHtml(mv.tempoBpm)}" placeholder="e.g. 120" oninput="updateMusicVideoField('tempoBpm',this.value)"></div>
+        <div class="field"><label>Performance style</label><input type="text" value="${escapeHtml(mv.performanceStyle)}" placeholder="energetic, intimate, choreographed..." oninput="updateMusicVideoField('performanceStyle',this.value)"></div>
+      </div>
+      <div class="field"><label>Audio Master Lock note (optional)</label><textarea rows="2" placeholder="Any specific timing/section notes for this shot" oninput="updateMusicVideoField('audioMasterLockNote',this.value)">${escapeHtml(mv.audioMasterLockNote)}</textarea></div>
+      <div class="field"><label>Vocal timing note (optional)</label><textarea rows="2" oninput="updateMusicVideoField('vocalTimingNote',this.value)">${escapeHtml(mv.vocalTimingNote)}</textarea></div>
+      <div class="field">
+        <label>Strict Lip Sync</label>
+        <select onchange="updateMusicVideoField('lipSyncMode',this.value)">
+          <option value="off" ${mv.lipSyncMode==='off'?'selected':''}>Off</option>
+          <option value="on" ${mv.lipSyncMode==='on'?'selected':''}>On</option>
+        </select>
+      </div>
+      <div class="sub" style="margin-top:6px;">The supplied audio is treated as the master timing reference — original tempo, BPM, and vocal/lyric timing are preserved, never reinterpreted. Turning on Strict Lip Sync adds exact vocal timing, accurate mouth movement, lyric synchronization, natural pauses and breaths, a relaxed mouth during instrumental sections, and forbids invented, skipped, or repeated lyrics.</div>
+    </div>
+  </div>`;
+}
+
 function updateNested(section, field, val){
   const proj = activeProject();
   proj.shot[section][field] = val;
@@ -4818,6 +5126,12 @@ function updateShotContentType(val){
   activeProject().shot.contentType = val;
   save();
   renderAll(); // affects Character/Wardrobe/Prop/Continuity applicability across the board, not just one lock
+}
+
+function updateShotProductionType(val){
+  activeProject().shot.productionType = val;
+  save();
+  renderAll(); // reveals/hides the Music Video Locks card, so this must re-render, not just save silently
 }
 
 /* ---------- Per-lock Reset — clears only THIS shot's fields for one lock.
@@ -5406,7 +5720,7 @@ function buildPromptParts(proj){
 
   // CAMERA
   const cam = shot.camera;
-  parts.camera = [cam.shotType?`${cam.shotType} shot.`:'', cam.cameraDistance?`Distance: ${cam.cameraDistance}.`:'', cam.lensLength?`Lens: ${cam.lensLength}.`:'', cam.depthOfField?`Depth of field: ${cam.depthOfField}.`:'', cam.composition?`Composition: ${cam.composition}.`:'', cam.cameraMovementDuringAction?`Camera movement: ${cam.cameraMovementDuringAction}.`:''].filter(Boolean).join(' ');
+  parts.camera = [cam.shotType?`${cam.shotType} shot.`:'', cam.cameraDistance?`Distance: ${cam.cameraDistance}.`:'', cam.lensLength?`Lens: ${cam.lensLength}.`:'', cam.depthOfField?`Depth of field: ${cam.depthOfField}.`:'', cam.composition?`Composition: ${cam.composition}.`:'', buildCameraMovementLine(cam.movementBuilder), cam.cameraMovementDuringAction?`Camera movement: ${cam.cameraMovementDuringAction}.`:''].filter(Boolean).join(' ');
 
   // LIGHTING
   const l = shot.lighting;
@@ -5477,11 +5791,32 @@ function buildSupportingReferenceBlock(shot){
   const authorizedBits = ref.scope==='pose_only' ? 'body pose, positioning, and physical dynamics'
                         : ref.scope==='composition_only' ? 'camera framing and compositional arrangement'
                         : 'body pose, positioning, physical dynamics, camera framing, and compositional arrangement';
+  // Generic and project-agnostic: names whatever prop/tech/vehicle assets are actually attached to THIS shot
+  // instead of any hardcoded project-specific asset list.
+  const attachedPropNames = (shot.props||[]).map(p=>p.propName).filter(Boolean);
+  const propClause = attachedPropNames.length ? `, or any locked prop/technology/vehicle design (${attachedPropNames.join(', ')})` : ', or any locked prop/technology/vehicle design';
   return [
     `SUPPORTING REFERENCE — LIMITED AUTHORITY (${scopeLabel}):`,
     ref.text,
-    `This reference may ONLY inform ${authorizedBits}. It has ZERO authority over character identity, face, hair, skin tone, age appearance, body proportions, canonical wardrobe, AEGIS/AetherMesh design, suit materials, suit colors, Data Core, Guardian Mantle design, footwear, or canonical environment/set design. If this reference depicts any design, wardrobe, or identity detail that differs from established canon above, that visual attribute is explicitly IGNORED — Master Canon governs it instead.`,
+    `This reference may ONLY inform ${authorizedBits}. It has ZERO authority over character identity, face, hair, skin tone, age appearance, body proportions, canonical wardrobe, canonical environment/set design${propClause}. If this reference depicts any design, wardrobe, or identity detail that differs from established canon above, that visual attribute is explicitly IGNORED — Master Canon governs it instead.`,
   ].join(' ');
+}
+
+function buildMusicVideoBlock(shot){
+  if(!isMusicVideoType(shot)) return '';
+  const mv = shot.musicVideo || {};
+  const lines = ['MUSIC VIDEO / PERFORMANCE LOCKS:'];
+  if(mv.artist) lines.push(`Artist: ${mv.artist}.`);
+  if(mv.songTitle) lines.push(`Song: "${mv.songTitle}".`);
+  lines.push('AUDIO MASTER LOCK: the supplied audio is the master timing reference for this video. Preserve the original tempo, BPM, and vocal/lyric timing exactly — do not reinterpret or alter the musical timing.');
+  if(mv.tempoBpm) lines.push(`Tempo: ${mv.tempoBpm} BPM — original tempo lock, not to be altered.`);
+  if(mv.performanceStyle) lines.push(`Performance style: ${mv.performanceStyle}.`);
+  if(mv.vocalTimingNote) lines.push(`Vocal timing: ${mv.vocalTimingNote}.`);
+  if(mv.audioMasterLockNote) lines.push(mv.audioMasterLockNote);
+  if(mv.lipSyncMode === 'on'){
+    lines.push('STRICT LIP SYNC: exact vocal timing, accurate mouth movement, precise lyric synchronization, natural pauses and breaths, mouth relaxed during instrumental sections. Do not invent lyrics, skip lyrics, or repeat lyrics. Performance movement should be appropriate to the song.');
+  }
+  return lines.join(' ');
 }
 
 function assembleMaster(proj){
@@ -5489,7 +5824,9 @@ function assembleMaster(proj){
   const identityLock = buildCharacterIdentityHardLock(proj);
   const styleLock = buildProjectStyleHardLock(proj, p.style);
   const supportingRefBlock = buildSupportingReferenceBlock(proj.shot);
-  const sections = [
+  const musicVideoBlock = buildMusicVideoBlock(proj.shot);
+  // Image prompts (and every mode except Video/Animation) keep the exact original identity-first order below, unchanged.
+  const imageOrder = [
     identityLock,             // MASTER CANON — character identity
     styleLock,                // PROJECT STYLE (hard lock, wraps all existing style content — nothing dropped)
     p.bibleRules,
@@ -5498,19 +5835,31 @@ function assembleMaster(proj){
     p.props,
     supportingRefBlock,       // SUPPORTING REFERENCE — authorized scope only, explicitly non-authoritative outside it
     p.action,                 // SHOT ACTION
+    musicVideoBlock,          // MUSIC VIDEO / PERFORMANCE LOCKS — only present for music_video / lip_sync_performance types
     p.characters,             // shot-specific state only now (pose/emotion/position) — identity already covered above
     p.camera,
     p.lighting,
     p.continuity,
     p.forbidden,
-  ].filter(x=>x && x.trim().length);
+  ];
+  // Video / Animation Prompt mode: motion-first — what's happening and how the camera moves, stated
+  // before static identity/style grounding, since that's what video generation models weight most.
+  const videoOrder = [
+    p.action, musicVideoBlock, p.camera, p.lighting,
+    identityLock, styleLock, p.bibleRules, p.wardrobe, p.set, p.props, supportingRefBlock, p.characters,
+    p.continuity, p.forbidden,
+  ];
+  const sections = (isVideoMode(proj.shot) ? videoOrder : imageOrder).filter(x=>x && x.trim().length);
   return sections.join('\n\n');
 }
 
 function assembleCompressed(proj, limit){
-  // priority order: character identity, style lock, key action, major continuity, critical forbidden
   const p = buildPromptParts(proj);
-  const priorityOrder = [p.style, p.characters, p.action, p.set, p.continuity, p.forbidden, p.wardrobe, p.camera, p.lighting, p.props, p.bibleRules];
+  // Image priority order: character identity, style lock, key action, major continuity, critical forbidden.
+  const imagePriorityOrder = [p.style, p.characters, p.action, p.set, p.continuity, p.forbidden, p.wardrobe, p.camera, p.lighting, p.props, p.bibleRules];
+  // Video priority order: motion-first — action and camera movement survive the cut before static grounding.
+  const videoPriorityOrder = [p.action, p.camera, p.style, p.continuity, p.forbidden, p.characters, p.lighting, p.wardrobe, p.set, p.props, p.bibleRules];
+  const priorityOrder = isVideoMode(proj.shot) ? videoPriorityOrder : imagePriorityOrder;
   let out = '';
   for(const chunk of priorityOrder){
     if(!chunk) continue;
@@ -5526,28 +5875,31 @@ function assembleCompressed(proj, limit){
 }
 
 function assembleReferenceAssetList(proj){
+  ensureReferencePriority(proj);
   const shot = proj.shot;
-  const lines = [];
+  const byCategory = { character:[], set:[], prop:[], style:[] };
   shot.characterRefs.forEach(cr=>{
     const c = proj.characters.find(x=>x.id===cr.charId);
     if(!c) return;
     const hasImages = (c.referenceImages||[]).length>0;
     const authorityNote = hasImages ? (c.referenceImages.find(r=>r.authorityLevel==='MASTER CANON') ? ' [MASTER CANON — CHARACTER AUTHORITY]' : ' [CHARACTER AUTHORITY]') : '';
-    lines.push(`• Character reference: ${c.name}${authorityNote}${c.referenceNote?` — ${c.referenceNote}`:''}${hasImages?` (${c.referenceImages.length} reference image${c.referenceImages.length!==1?'s':''} attached)`:''}`);
+    byCategory.character.push(`• Character reference: ${c.name}${authorityNote}${c.referenceNote?` — ${c.referenceNote}`:''}${hasImages?` (${c.referenceImages.length} reference image${c.referenceImages.length!==1?'s':''} attached)`:''}`);
   });
   if(shot.set.setName){
     const src = proj.sets.find(s=>s.name===shot.set.setName);
     const hasImages = src && (src.referenceImages||[]).length>0;
-    lines.push(`• Set reference: ${shot.set.setName}${hasImages?' [SET GEOGRAPHY AUTHORITY]':''}${src&&src.referenceNote?` — ${src.referenceNote}`:''}${hasImages?` (${src.referenceImages.length} reference image${src.referenceImages.length!==1?'s':''} attached)`:''}`);
+    byCategory.set.push(`• Set reference: ${shot.set.setName}${hasImages?' [SET GEOGRAPHY AUTHORITY]':''}${src&&src.referenceNote?` — ${src.referenceNote}`:''}${hasImages?` (${src.referenceImages.length} reference image${src.referenceImages.length!==1?'s':''} attached)`:''}`);
   }
   shot.props.forEach(p=>{
     const src = proj.props.find(x=>x.name===p.propName);
     const hasImages = src && (src.referenceImages||[]).length>0;
     const roleLabel = src && src.category==='vehicle' ? ' [VEHICLE AUTHORITY]' : src && src.category==='technology' ? ' [PROP/TECHNOLOGY AUTHORITY]' : hasImages ? ' [PROP AUTHORITY]' : '';
-    lines.push(`• Prop reference: ${p.propName}${roleLabel}${src&&src.referenceNote?` — ${src.referenceNote}`:''}${hasImages?` (${src.referenceImages.length} reference image${src.referenceImages.length!==1?'s':''} attached)`:''}`);
+    byCategory.prop.push(`• Prop reference: ${p.propName}${roleLabel}${src&&src.referenceNote?` — ${src.referenceNote}`:''}${hasImages?` (${src.referenceImages.length} reference image${src.referenceImages.length!==1?'s':''} attached)`:''}`);
   });
-  if(shot.style.styleReferences) lines.push(`• Style reference: ${shot.style.styleReferences} [STYLE AUTHORITY]`);
-  return lines.join('\n') || 'No reference assets attached to this shot.';
+  if(shot.style.styleReferences) byCategory.style.push(`• Style reference: ${shot.style.styleReferences} [STYLE AUTHORITY]`);
+  const lines = proj.referencePriority.flatMap(key=>byCategory[key]||[]);
+  if(!lines.length) return 'No reference assets attached to this shot.';
+  return buildReferencePriorityLine(proj) + '\n\n' + lines.join('\n');
 }
 
 function visualReferenceInstructionLine(assetName, ref){
@@ -5566,31 +5918,34 @@ function visualReferenceInstructionLine(assetName, ref){
 }
 
 function assembleVisualReferenceInstructions(proj){
+  ensureReferencePriority(proj);
   const shot = proj.shot;
-  const lines = [];
+  const byCategory = { character:[], set:[], prop:[], style:[] };
 
   shot.characterRefs.forEach(cr=>{
     const c = proj.characters.find(x=>x.id===cr.charId);
     if(c && (c.referenceImages||[]).length){
-      c.referenceImages.forEach(r=> lines.push(visualReferenceInstructionLine(c.name, r)));
+      c.referenceImages.forEach(r=> byCategory.character.push(visualReferenceInstructionLine(c.name, r)));
     }
   });
 
   if(shot.set.setName){
     const setEntity = proj.sets.find(s=>s.name===shot.set.setName);
     if(setEntity && (setEntity.referenceImages||[]).length){
-      setEntity.referenceImages.forEach(r=> lines.push(visualReferenceInstructionLine(setEntity.name, r)));
+      setEntity.referenceImages.forEach(r=> byCategory.set.push(visualReferenceInstructionLine(setEntity.name, r)));
     }
   }
 
   shot.props.forEach(p=>{
     const src = proj.props.find(x=>x.name===p.propName);
     if(src && (src.referenceImages||[]).length){
-      src.referenceImages.forEach(r=> lines.push(visualReferenceInstructionLine(src.name, r)));
+      src.referenceImages.forEach(r=> byCategory.prop.push(visualReferenceInstructionLine(src.name, r)));
     }
   });
 
-  return lines.length ? lines.join('\n\n') : 'No visual reference images attached to this shot — text canon only. Attach references in Asset Library to reduce drift risk.';
+  const lines = proj.referencePriority.flatMap(key=>byCategory[key]||[]);
+  if(!lines.length) return 'No visual reference images attached to this shot — text canon only. Attach references in Asset Library to reduce drift risk.';
+  return buildReferencePriorityLine(proj) + '\n\n' + lines.join('\n\n');
 }
 
 function platformNote(platform){
@@ -5608,6 +5963,58 @@ function platformNote(platform){
   return notes[platform] || '';
 }
 
+/* ---------------- Platform-Optimized prompt — real structural translation, not just a note ----------------
+   Read-only transform layer: consumes the same canonical parts everything else uses (buildPromptParts,
+   the hard-lock builders) and reorders/reformats them per platform family. Never touches shot/project
+   data, never changes what Master Prompt shows — purely an additional, additive output view. */
+const PLATFORM_STYLE_GROUPS = {
+  'Midjourney':'descriptor_list', 'Stable Diffusion':'descriptor_list', 'Leonardo':'descriptor_list',
+  'Runway':'motion_first', 'Veo':'motion_first', 'Kling':'motion_first', 'Hailuo':'motion_first', 'Sora':'motion_first',
+  'ChatGPT Image Generation':'prose_explicit',
+  'Generic Image Model':'passthrough', 'Generic Video Model':'passthrough',
+};
+function platformStyleGroup(platform){ return PLATFORM_STYLE_GROUPS[platform] || 'passthrough'; }
+
+function textToDescriptorTags(text){
+  if(!text) return [];
+  return text.split(/\.\s+/).map(s=>s.trim().replace(/\.\s*$/,'')).filter(Boolean);
+}
+
+function translatePromptForPlatform(proj){
+  const platform = proj.shot.platform;
+  const group = platformStyleGroup(platform);
+  const p = buildPromptParts(proj);
+  const identityLock = buildCharacterIdentityHardLock(proj);
+  const styleLock = buildProjectStyleHardLock(proj, p.style);
+  const musicVideoBlock = buildMusicVideoBlock(proj.shot);
+
+  if(group === 'passthrough'){
+    return { text: assembleMaster(proj), note: 'No platform-specific restructuring applied — this is the standard Master Prompt, used as-is for a generic model.' };
+  }
+
+  if(group === 'descriptor_list'){
+    // Style/medium first, then subject, then everything else — as a dense comma-separated tag list.
+    // Forbidden deviations are pulled out entirely since these platforms take negatives as a separate field, not inline prose.
+    const orderedBlocks = [styleLock, identityLock, p.wardrobe, p.characters, p.set, p.props, p.camera, p.lighting, p.action, p.continuity].filter(Boolean);
+    const tags = [...new Set(orderedBlocks.flatMap(textToDescriptorTags))];
+    const text = tags.join(', ') + (tags.length ? '.' : '');
+    const negTags = textToDescriptorTags(p.forbidden).join(', ');
+    return { text, note: `${platform} reads best as a dense comma-separated tag list, not full sentences — style/medium first, subject next.${negTags?` Negative terms pulled out for its separate negative field: ${negTags}.`:' Check the Negative / Forbidden tab for its separate negative field.'}` };
+  }
+
+  if(group === 'motion_first'){
+    // Video platforms: lead with what's moving and how the camera moves, THEN static identity/style grounding.
+    const movementLine = buildCameraMovementLine(proj.shot.camera.movementBuilder);
+    const sections = [p.action, movementLine || p.camera, musicVideoBlock, identityLock, styleLock, p.wardrobe, p.set, p.props, p.lighting, p.continuity, p.forbidden].filter(x=>x && x.trim().length);
+    return { text: sections.join('\n\n'), note: `${platform} reads best motion-first: what's happening and how the camera moves stated before static style/identity grounding — reordered from the Master Prompt's identity-first structure.` };
+  }
+
+  // prose_explicit — e.g. ChatGPT Image Generation: full sentences, forbidden deviations rewritten as an explicit instruction rather than a bracketed list.
+  const sections = [identityLock, styleLock, p.bibleRules, p.wardrobe, p.set, p.props, p.action, p.camera, p.lighting, p.continuity].filter(x=>x && x.trim().length);
+  const text = sections.join('\n\n') + (p.forbidden ? `\n\nExplicitly, do not change: ${p.forbidden}` : '');
+  return { text, note: `${platform} handles full natural-language sentences well; forbidden deviations are rewritten here as an explicit "do not change" instruction, which this platform follows more reliably than a bracketed negative list.` };
+}
+
 function viewOutput(){
   const proj = activeProject();
   const { pct, perLock } = computeCompleteness(proj);
@@ -5621,8 +6028,9 @@ function viewOutput(){
   const continuity = buildPromptParts(proj).continuity || '(No continuity notes yet — fill in the Continuity Lock.)';
   const refs = assembleReferenceAssetList(proj);
   const visualRefs = assembleVisualReferenceInstructions(proj);
-  const compact = assembleCompressed(proj, 600);
+  const compact = assembleCompressed(proj, defaultCompactLimit(proj.shot));
   const platNote = platformNote(proj.shot.platform);
+  const platformTranslation = translatePromptForPlatform(proj);
 
   const tabContent = {
     master: master || '(Nothing generated yet — fill in the Shot Builder locks.)',
@@ -5631,6 +6039,7 @@ function viewOutput(){
     refs: refs,
     visualrefs: visualRefs,
     compact: compact + (platNote ? `\n\n[Platform note — ${proj.shot.platform}: ${platNote}]` : ''),
+    platform: platformTranslation.text || '(Nothing generated yet — fill in the Shot Builder locks.)',
   };
 
   const critList = LOCK_DEFS.map(d=>perLock[d.key]).reduce((acc,ev)=>acc.concat(ev.missing.CRITICAL.map(m=>m)),[]);
@@ -5694,7 +6103,7 @@ function viewOutput(){
     <h3>Prompt length</h3>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button class="btn btn-sm" onclick="outputTab='master';renderAll();">Full</button>
-      <button class="btn btn-sm" onclick="outputTab='compact';renderAll();">Compact (~600 chars)</button>
+      <button class="btn btn-sm" onclick="outputTab='compact';renderAll();">Compact (~${defaultCompactLimit(proj.shot)} chars${isVideoMode(proj.shot)?' — video default':''})</button>
       <input type="number" placeholder="Custom char limit" style="width:150px;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px;" onchange="customCompactLimit(this.value)">
     </div>
   </div>
@@ -5706,7 +6115,9 @@ function viewOutput(){
     <button class="output-tab ${outputTab==='refs'?'active':''}" onclick="outputTab='refs';renderAll();">Reference Asset List</button>
     <button class="output-tab ${outputTab==='visualrefs'?'active':''}" onclick="outputTab='visualrefs';renderAll();">Visual Reference Instructions</button>
     <button class="output-tab ${outputTab==='compact'?'active':''}" onclick="outputTab='compact';renderAll();">Compressed</button>
+    <button class="output-tab ${outputTab==='platform'?'active':''}" onclick="outputTab='platform';renderAll();">Platform-Optimized (${escapeHtml(proj.shot.platform)})</button>
   </div>
+  ${outputTab==='platform' ? `<div class="sub" style="margin:-2px 0 8px;">${escapeHtml(platformTranslation.note)} Structure only — canon, identity, and forbidden-deviation content is identical to Master Prompt, just reordered/reformatted for this platform.</div>` : ''}
   <div class="output-box" id="outputBox">${escapeHtml(tabContent[outputTab])}</div>
   <div class="char-count">${tabContent[outputTab].length} characters</div>
 
@@ -5737,13 +6148,15 @@ function copyOutput(){
 function copyAll(){
   const proj = activeProject();
   const p = buildPromptParts(proj);
+  const platformTranslation = translatePromptForPlatform(proj);
   const all = [
     '=== MASTER PROMPT ===', assembleMaster(proj),
     '\n=== NEGATIVE / FORBIDDEN DEVIATIONS ===', p.forbidden,
     '\n=== CONTINUITY NOTES ===', p.continuity,
     '\n=== REFERENCE ASSET LIST ===', assembleReferenceAssetList(proj),
     '\n=== VISUAL REFERENCE INSTRUCTIONS ===', assembleVisualReferenceInstructions(proj),
-    '\n=== COMPRESSED ===', assembleCompressed(proj,600),
+    '\n=== COMPRESSED ===', assembleCompressed(proj,defaultCompactLimit(proj.shot)),
+    `\n=== PLATFORM-OPTIMIZED (${proj.shot.platform}) ===`, platformTranslation.text,
   ].join('\n');
   navigator.clipboard.writeText(all).then(()=>flashCopied());
 }
@@ -5759,6 +6172,7 @@ function flashCopied(){
 function exportTxt(){
   const proj = activeProject();
   const p = buildPromptParts(proj);
+  const platformTranslation = translatePromptForPlatform(proj);
   const all = [
     `XPERT PROMPT EXPORT — ${proj.name}`,
     `Mode: ${proj.shot.mode} | Platform: ${proj.shot.platform}`,
@@ -5767,7 +6181,8 @@ function exportTxt(){
     '\n=== CONTINUITY NOTES ===', p.continuity,
     '\n=== REFERENCE ASSET LIST ===', assembleReferenceAssetList(proj),
     '\n=== VISUAL REFERENCE INSTRUCTIONS ===', assembleVisualReferenceInstructions(proj),
-    '\n=== COMPRESSED ===', assembleCompressed(proj,600),
+    '\n=== COMPRESSED ===', assembleCompressed(proj,defaultCompactLimit(proj.shot)),
+    `\n=== PLATFORM-OPTIMIZED (${proj.shot.platform}) ===`, platformTranslation.text,
   ].join('\n');
   const blob = new Blob([all], {type:'text/plain'});
   const url = URL.createObjectURL(blob);
@@ -6958,6 +7373,13 @@ function viewBackup(){
     <div class="sub" style="margin-bottom:10px;">Downloads <strong>every project</strong> — not just the active one — as one portable .json file: characters, sets, props, chapters, scenes, shots, versions, reference images, sources, and Project Knowledge for all of them.</div>
     <button class="btn btn-gold" onclick="exportFullBackup()">Back Up Everything</button>
   </div>
+
+  <div class="section-block">
+    <h3 style="display:flex;align-items:center;gap:8px;"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${(()=>{ const c=getGithubBackupConfig(); return c.enabled && c.lastBackupStatus==='OK' ? 'var(--green)' : c.enabled ? 'var(--orange)' : 'var(--text-faint)'; })()};"></span>GitHub Auto-Backup</h3>
+    <div class="sub" style="margin-bottom:10px;">${(()=>{ const c=getGithubBackupConfig(); if(!c.enabled) return 'Not enabled — every save downloading manually is the only copy right now. Set this up once so a real, external, versioned copy happens automatically.'; return `Enabled — backing up to <strong>${escapeHtml(c.owner)}/${escapeHtml(c.repo)}/${escapeHtml(c.path)}</strong> after saves (at most once a minute). ${c.lastBackupAt ? `Last backup: ${new Date(c.lastBackupAt).toLocaleString()} — ${escapeHtml(c.lastBackupStatus||'')}` : 'No backup has run yet.'}`; })()}</div>
+    <button class="btn" onclick="openGithubBackupSettingsModal()">${getGithubBackupConfig().enabled ? 'Manage GitHub Backup' : 'Set Up GitHub Backup'}</button>
+  </div>
+
   <div class="section-block">
     <h3>Restore Complete Backup</h3>
     <div class="sub" style="margin-bottom:10px;">Adds every project in the backup file alongside what you already have — matched by project ID, never overwritten silently. You'll see a full count before anything commits.</div>
@@ -6985,6 +7407,8 @@ function viewBackup(){
       <div class="qc-item"><div class="label">Chapters</div><div class="score mono">${(proj.chapters||[]).length}</div></div>
       <div class="qc-item"><div class="label">Shots</div><div class="score mono">${(proj.shots||[]).length}</div></div>
       <div class="qc-item"><div class="label">Versions</div><div class="score mono">${proj.versions.length}</div></div>
+      <div class="qc-item"><div class="label">Project sources</div><div class="score mono">${(proj.sources||[]).length}</div></div>
+      <div class="qc-item"><div class="label">Facts</div><div class="score mono">${(proj.facts||[]).length}</div></div>
     </div>
   </div>
   `;
