@@ -530,12 +530,21 @@ function scheduleGithubBackup(){
   }, 60000); // at most one GitHub write per minute, however often save() fires in between
 }
 
+let _githubBackupInFlight = false; // prevents two overlapping backup calls (e.g. the "back up now"
+  // button and a just-scheduled auto-backup) from racing each other's GET-then-PUT and losing a
+  // git-level conflict on the branch — the second one now just waits its turn instead of failing.
 async function runGithubBackup(showResult){
   const cfg = getGithubBackupConfig();
   if(!cfg.enabled || !cfg.token || !cfg.owner || !cfg.repo){
     if(showResult) openMessageModal('GitHub backup is not fully configured yet — fill in the token, owner, and repo first.');
     return { ok:false, error:'not configured' };
   }
+  if(_githubBackupInFlight){
+    // Another backup is already running (e.g. this same save cycle already triggered one). Re-queue
+    // this request a moment later instead of racing it — never silently drop the intent to back up.
+    return new Promise(resolve=>setTimeout(()=>resolve(runGithubBackup(showResult)), 1500));
+  }
+  _githubBackupInFlight = true;
   const path = (cfg.path || 'xpert-backups/latest.json').replace(/^\/+/, '');
   const apiUrl = `https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
   const payload = {
@@ -569,6 +578,8 @@ async function runGithubBackup(showResult){
     console.error('GitHub backup failed', e);
     if(showResult) openMessageModal('GitHub backup failed: ' + e.message + '\n\nThis never affects your local save — it only means the external copy did not update this time. Check the token has "Contents: read and write" permission on this repo.');
     return { ok:false, error: e.message };
+  }finally{
+    _githubBackupInFlight = false;
   }
 }
 
