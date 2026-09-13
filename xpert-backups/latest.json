@@ -1,7 +1,7 @@
 {
   "packageFormat": "xpert-prompt-full-backup",
   "packageSchemaVersion": 4,
-  "exportedAt": 1789254718806,
+  "exportedAt": 1789268414304,
   "activeProjectId": "ko3xarfpmtmyf7hd",
   "projects": [
     {
@@ -51,12 +51,17 @@
         "wardrobeRefs": [],
         "props": [],
         "camera": {
-          "shotType": "",
-          "cameraDistance": "",
-          "lensLength": "",
+          "shotType": "Wide cinematic shot",
+          "cameraDistance": "Wide/full shot",
+          "lensLength": "~24mm wide lens",
           "depthOfField": "",
           "composition": "",
-          "cameraMovementDuringAction": ""
+          "cameraMovementDuringAction": "",
+          "movementBuilder": {
+            "start": "",
+            "movement": "",
+            "end": ""
+          }
         },
         "lighting": {
           "keyLight": "",
@@ -67,7 +72,7 @@
           "forbiddenLightingChanges": ""
         },
         "action": {
-          "primaryAction": "=== MASTER PROMPT ===\n\nPROJECT VISUAL STYLE — HARD LOCK:\nPremium stylized theatrical 3D animation. Clearly animated characters and environments. No photorealistic CGI, realistic digital humans, or live-action skin texture. South Bronx, 2076. Maintain the exact established Zeke Zoom visual universe.\n\nXPERT — ZEKE ZOOM 2076\nBOOK IMAGE 4 — “FAMILY CHILD LABOR”\n\nTASK:\nCreate ONE optimized Runway IMAGE-generation prompt for Book Image 4.\n\nHARD OUTPUT RULE:\nFinal Xpert output MUST be under 3,500 characters.\nOutput ONLY the final Runway prompt.\nDo NOT append compressed versions, asset lists, continuity notes, duplicate negatives, summaries, explanations, or repeated canon.\n\nSTORY PURPOSE:\nIntroduce Zeke’s best friends Gary and Emory while showing the ordinary, humorous side of Zeke’s extraordinary life.\n\nThe visual beat comes from Gary teasing Zeke because a 12-year-old with three college degrees is still sweeping the floor at his family’s automotive shop.\n\nTHIS IS A FRIENDSHIP/HUMOR SCENE — NOT AN ACTION OR SUPERHERO SCENE.\n\nREFERENCE PRIORITY — ABSOLUTE:\nUse the supplied reference images as identity authority.\n\nREFERENCE 1 — CIVILIAN ZEKE:\nPreserve Zeke’s exact approved face, tightly curled hair, medium-brown skin, younger/shorter 12-year-old proportions, relatively larger child head and slim preteen body.\n\nPreserve exact civilian wardrobe:\nolive-green hooded jacket,\nplain dark T-shirt,\ndark blue jeans,\nblack-and-white sneakers.\n\nNO Z emblem.\nNO AEGIS.\nNO superhero clothing.\n\nREFERENCE 2 — EMORY:\nEmory is the TALL, VERY SLIM boy with the high-top haircut.\nPreserve his exact face, elongated youthful proportions, hairstyle, skin tone and established clothing:\norange/brown plaid overshirt,\nlight neutral T-shirt,\nloose dark pants,\ngreen/cream sneakers.\n\nDo NOT shorten Emory or give him an Afro.\n\nREFERENCE 3 — GARY:\nGary is the SHORTER boy with the LARGE ROUNDED AFRO.\nPreserve his exact face, Afro shape, skin tone and established clothing:\nred-and-black plaid overshirt,\ngray T-shirt,\ntan pants,\ndark sneakers.\n\nDo NOT make Gary tall.\nDo NOT give Gary Emory’s high-top haircut.\n\nTHE THREE BOYS MUST REMAIN VISUALLY DISTINCT.\n\nSET — ABSOLUTE CONTINUITY:\nUse the supplied approved LAMB’S AUTOMOTIVE MASTER SET.\n\nPreserve the established garage architecture, open bay, South Bronx exterior, Lamborghini lift, workbenches, tool cabinets, diagnostic equipment, floor layout, warm afternoon lighting and overall geography.\n\nDo NOT redesign the garage.\n\nSCENE:\nZeke, Gary and Emory are together inside Lamb’s Automotive during the same Saturday sequence.\n\nZeke has paused while sweeping and still has the broom with him.\n\nGary is playfully teasing Zeke about having three college degrees while still sweeping floors. His body language should be animated, amused and friendly — perhaps gesturing toward Zeke or the broom while grinning.\n\nZeke reacts with an amused, mildly annoyed “really?” expression. He is comfortable with his friends, not angry or embarrassed.\n\nEmory stands nearby with his characteristic dry, matter-of-fact demeanor, naturally participating in the conversation without exaggerated comedy.\n\nTheir friendship should be instantly readable.\n\nDo NOT put dialogue or speech bubbles in the image.\n\nCOMPOSITION:\nPremium animated-feature medium-wide three-character shot.\n\nZeke is the visual anchor.\nGary and Emory form a natural conversational triangle around him.\n\nThe broom must remain clearly visible and understandable as the subject of the joke.\n\nShow the boys at sufficiently full scale to emphasize the height contrast:\nZeke = short/young,\nGary = shorter boy with Afro,\nEmory = clearly tallest and very slim.\n\nKeep enough of Lamb’s Automotive visible to maintain location continuity without allowing the environment to overpower the characters.\n\nNatural child-scale camera height.\nStrong foreground/midground/background separation.\nFeature-film composition and dimensional depth.\n\nLIGHTING:\nMatch established warm late-afternoon sunlight through the garage bay mixed with practical shop lighting. Preserve the visual continuity of previous Lamb’s Automotive illustrations.\n\nMOOD:\nWarm, funny, affectionate, intelligent and grounded.\nThree real best friends joking around on a normal Saturday.\n\nSTYLE:\nPremium theatrical stylized 3D animated feature-film frame matching the approved Zeke canon.\n\nNOT photorealistic.\nNOT live action.\nNOT 2D.\nNOT concept art.\nNOT game/Unreal CGI.\nNOT cyberpunk.\n\nFORBIDDEN:\nCharacter redesigns, swapped identities, altered hairstyles, wrong heights, wardrobe changes, older-looking boys, adult proportions, muscular children, Z emblem, AEGIS, superhero imagery, dialogue text, speech bubbles, extra characters, duplicate boys, garage redesign, different Lamborghini, excessive futuristic technology or random generated text.\n\nCONTINUITY IS MORE IMPORTANT THAN NOVELTY.\n\nFINAL GOAL:\nA warm cinematic friendship moment introducing Gary and Emory: brilliant 12-year-old Zeke stands with his broom inside his family’s automotive shop while Gary jokingly teases him and tall, dry-humored Emory joins the exchange.",
+          "primaryAction": "IMAGE 39 — TEST RIG ACCIDENT AFTERMATH\n\nSTORY BEAT:\nImmediately after the mechanical impact arm accidentally fires at excessive force.\n\nZeke has been thrown backward as the safety restraint releases. He has crashed through the lightweight divider and landed on the hidden-lab floor.\n\nGrandpa Ben has just opened the hidden door and sees the accident scene.\n\nPRIOR-SHOT CONTINUITY — HARD LOCK:\nContinue directly from Image 38.\n\nDO NOT redesign or rearrange the hidden laboratory.\n\nPreserve every established permanent object and its location:\n- hidden doorway on LEFT\n- automotive-shop warm light visible through doorway\n- damaged mechanical impact test rig in its previously established position\n- marked safety-line/testing area\n- established workbenches\n- established monitors\n- established Project Z.E.K.E. laboratory architecture\n- existing equipment and furniture\n- cool blue laboratory lighting\n\nDo not replace an established workbench, machine, doorway, monitor, cabinet, wall feature or other major object with something different.\n\nCHARACTER LOCK — ZEKE:\nSame established 12-year-old Zeke.\nSame face.\nSame curls.\nSame skin tone.\nSame child proportions.\n\nWARDROBE / SUIT LOCK:\nUse the EXACT Chapter 4 PROTOTYPE AEGIS suit established in Image 36/37.\n\nNOT the newly redesigned final AEGIS suit.\n\nPreserve:\n- exact black/silver AetherMesh construction\n- exact blue pathways\n- circular glowing Z chest Data Core\n- exact front architecture\n- exact shoulders, arms and legs\n- exact prototype footwear\n- no helmet\n- face visible\n\nACTION:\nZeke is on the floor immediately after crashing through the lightweight divider.\n\nBroken lightweight divider material is around/behind him.\n\nHe is conscious and beginning to recover, visibly sore and startled but NOT severely injured.\n\nThe AetherMesh has softened again after protecting him.\n\nThe AEGIS X1 drone hovers close above Zeke scanning him.\n\nScanner information may display ONLY:\n\nHEART RATE: ELEVATED\nRESPIRATION: ELEVATED\nPOSSIBLE SHOULDER TRAUMA\n\nGrandpa Ben has JUST entered through the established hidden doorway on the LEFT.\n\nHe sees:\n1. broken divider\n2. damaged test rig\n3. Zeke on floor\n4. prototype suit\n\nGrandpa's expression immediately changes to alarm and fear for Zeke.\n\nDo not yet show Grandpa kneeling or examining Zeke. That happens immediately AFTER this beat.\n\nCAMERA:\nWide cinematic composition showing enough of the established laboratory to verify continuity.\n\nZeke is the primary focus.\nGrandpa visible at the left doorway.\nDamaged test rig remains visible.\nDrone scanning Zeke.\n\nLIGHTING:\nEstablished cool electric-blue hidden-lab lighting with warm automotive-shop light spilling through the left doorway.\n\nSTYLE:\nPremium stylized cinematic 3D animated-feature rendering consistent with all approved Zeke Zoom book images.\n\nCONTINUITY:\nThis is seconds after Image 38.\nNothing has magically moved, disappeared, changed design or been replaced.\n\nFORBIDDEN DEVIATIONS:\nNO new machines.\nNO new furniture.\nNO new closets.\nNO rearranged workbenches.\nNO different test rig.\nNO chair restraint.\nNO giant hammer.\nNO redesigned laboratory.\nNO final upgraded AEGIS suit.\nNO Guardian Mantle.\nNO wings or cape.\nNO helmet.\nNO weapons.\nNO adult-looking Zeke.\nNO face drift.\nNO Grandpa redesign.\nNO extra characters.\nNO unexplained technology.\nNO photorealism.\nNO text except the three authorized medical scan readings.",
           "secondaryAction": "",
           "timing": "",
           "cameraMovementDuringAction2": "",
@@ -93,6 +98,16 @@
         "chapterId": null,
         "sceneId": null,
         "shotNumber": null,
+        "productionType": "image",
+        "musicVideo": {
+          "artist": "",
+          "songTitle": "",
+          "audioMasterLockNote": "",
+          "tempoBpm": "",
+          "vocalTimingNote": "",
+          "lipSyncMode": "off",
+          "performanceStyle": ""
+        },
         "supportingReference": null
       },
       "versions": [],
